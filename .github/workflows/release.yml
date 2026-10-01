@@ -1,0 +1,46 @@
+name: Release
+
+# Tags + publishes a GitHub Release whenever the version in manifest.json changes
+# on main. Bump the "version" field in manifest.json, merge to main, and this
+# creates v<version> automatically. Idempotent: re-runs are a no-op once the tag exists.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read manifest version
+        id: ver
+        run: |
+          VERSION=$(python -c "import json; print(json.load(open('manifest.json'))['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and release if the version is new
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists - nothing to release."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" --title "$TAG" \
+            --notes "Release $TAG (manifest version $VERSION)."
