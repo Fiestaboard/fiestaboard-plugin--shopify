@@ -1,0 +1,369 @@
+{
+  "id": "shopify",
+  "name": "Shopify",
+  "version": "1.0.0",
+  "description": "Show your Shopify store's sales, orders, latest order and low-stock alerts, with a new-order alert page.",
+  "author": "FiestaBoard Team",
+  "repository": "https://github.com/Fiestaboard/fiestaboard-plugin--shopify",
+  "documentation": "README.md",
+  "icon": "shopping-bag",
+  "category": "data",
+  "fiestaboard_version": ">=9.0.0",
+  "min_refresh_seconds": 60,
+  "supports_triggers": true,
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "title": "Enable Shopify",
+        "default": false
+      },
+      "shop_domain": {
+        "type": "string",
+        "title": "Store Domain",
+        "description": "Your store's .myshopify.com address, e.g. your-store.myshopify.com (find it in Shopify admin under Settings > Domains)."
+      },
+      "client_id": {
+        "type": "string",
+        "title": "Client ID",
+        "description": "From your app in the Shopify Dev Dashboard (Settings). Use this with the Client secret, or leave both empty and use an Admin API access token instead."
+      },
+      "client_secret": {
+        "type": "string",
+        "title": "Client Secret",
+        "description": "From your app in the Shopify Dev Dashboard (Settings). FiestaBoard uses it to get a new access token every 24 hours.",
+        "ui:widget": "password"
+      },
+      "access_token": {
+        "type": "string",
+        "title": "Admin API Access Token (legacy apps)",
+        "description": "Only for custom apps created in the Shopify admin before 2026 (starts with shpat_). Leave empty when using a Client ID and secret.",
+        "ui:widget": "password"
+      },
+      "sales_period": {
+        "type": "string",
+        "title": "Sales Period",
+        "description": "Which period the sales and order totals cover, in your store's timezone. Weeks start on Monday.",
+        "enum": [
+          "today",
+          "week",
+          "month"
+        ],
+        "enumNames": [
+          "Today",
+          "This week",
+          "This month"
+        ],
+        "default": "today"
+      },
+      "include_test_orders": {
+        "type": "boolean",
+        "title": "Include Test Orders",
+        "description": "Count test orders (placed with Shopify's test payment gateway). Turn on for development stores, where every order is a test order.",
+        "default": false
+      },
+      "low_stock_threshold": {
+        "type": "integer",
+        "title": "Low Stock Threshold",
+        "description": "Flag active products with this many units or fewer. 0 turns low-stock tracking off. Needs the read_products scope.",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 10000
+      },
+      "enable_triggers": {
+        "type": "boolean",
+        "title": "New Order Alerts",
+        "description": "Interrupt the board with a new-order page when an order comes in.",
+        "default": true
+      },
+      "alert_duration_seconds": {
+        "type": "integer",
+        "title": "Alert Duration (seconds)",
+        "description": "How long the new-order page stays on the board.",
+        "default": 60,
+        "minimum": 10,
+        "maximum": 3600
+      },
+      "trigger_page_id": {
+        "type": "string",
+        "title": "Alert Page",
+        "description": "Page to show when a new order comes in. Leave blank for the built-in NEW ORDER display. The page can use any {{shopify.*}} variable; last_order_* describe the new order.",
+        "ui:widget": "page-picker"
+      },
+      "refresh_seconds": {
+        "type": "integer",
+        "title": "Refresh Interval (seconds)",
+        "description": "How often to check Shopify. New-order alerts appear within one refresh.",
+        "default": 120,
+        "minimum": 60,
+        "maximum": 3600
+      }
+    },
+    "required": [
+      "shop_domain"
+    ]
+  },
+  "env_vars": [
+    {
+      "name": "SHOPIFY_SHOP_DOMAIN",
+      "required": false,
+      "description": "Store domain, e.g. your-store.myshopify.com (alternative to the UI setting)"
+    },
+    {
+      "name": "SHOPIFY_CLIENT_ID",
+      "required": false,
+      "description": "Dev Dashboard app Client ID (alternative to the UI setting)"
+    },
+    {
+      "name": "SHOPIFY_CLIENT_SECRET",
+      "required": false,
+      "description": "Dev Dashboard app Client secret (alternative to the UI setting)"
+    },
+    {
+      "name": "SHOPIFY_ACCESS_TOKEN",
+      "required": false,
+      "description": "Legacy custom app Admin API access token (alternative to the UI setting)"
+    }
+  ],
+  "variables": {
+    "groups": {
+      "sales": {
+        "label": "Sales"
+      },
+      "latest_order": {
+        "label": "Latest Order"
+      },
+      "inventory": {
+        "label": "Inventory"
+      },
+      "store": {
+        "label": "Store"
+      }
+    },
+    "simple": {
+      "sales_line": {
+        "description": "Period and sales together, ready to display",
+        "type": "string",
+        "max_length": 22,
+        "group": "sales",
+        "example": "TODAY $1,284"
+      },
+      "sales_display": {
+        "description": "Sales for the period in whole currency units",
+        "type": "string",
+        "max_length": 16,
+        "group": "sales",
+        "example": "$1,284"
+      },
+      "sales": {
+        "description": "Sales for the period as a plain number with cents",
+        "type": "string",
+        "max_length": 14,
+        "group": "sales",
+        "example": "1284.50"
+      },
+      "period_label": {
+        "description": "The period the totals cover: TODAY, THIS WEEK or THIS MONTH",
+        "type": "string",
+        "max_length": 10,
+        "group": "sales",
+        "example": "TODAY"
+      },
+      "orders_line": {
+        "description": "Order count with the word ORDER or ORDERS",
+        "type": "string",
+        "max_length": 14,
+        "group": "sales",
+        "example": "23 ORDERS"
+      },
+      "order_count": {
+        "description": "Number of orders in the period",
+        "type": "number",
+        "max_length": 6,
+        "group": "sales",
+        "example": "23"
+      },
+      "avg_order_display": {
+        "description": "Average order value for the period",
+        "type": "string",
+        "max_length": 12,
+        "group": "sales",
+        "example": "$56"
+      },
+      "last_order_line": {
+        "description": "Latest order number, total and age together",
+        "type": "string",
+        "max_length": 22,
+        "group": "latest_order",
+        "example": "#1042 $86 12M AGO"
+      },
+      "last_order_number": {
+        "description": "Latest order's number",
+        "type": "string",
+        "max_length": 12,
+        "group": "latest_order",
+        "example": "#1042"
+      },
+      "last_order_total": {
+        "description": "Latest order's total",
+        "type": "string",
+        "max_length": 12,
+        "group": "latest_order",
+        "example": "$86"
+      },
+      "last_order_ago": {
+        "description": "How long ago the latest order was placed",
+        "type": "string",
+        "max_length": 8,
+        "group": "latest_order",
+        "example": "12M AGO"
+      },
+      "low_stock_line": {
+        "description": "Low-stock summary (empty when tracking is off)",
+        "type": "string",
+        "max_length": 14,
+        "group": "inventory",
+        "example": "4 LOW STOCK"
+      },
+      "low_stock_count": {
+        "description": "Number of variants at or below the threshold",
+        "type": "number",
+        "max_length": 4,
+        "group": "inventory",
+        "example": "4"
+      },
+      "low_stock_item": {
+        "description": "The variant with the least stock",
+        "type": "string",
+        "max_length": 22,
+        "group": "inventory",
+        "example": "CERAMIC MUG BLUE"
+      },
+      "low_stock_item_qty": {
+        "description": "Units left of that variant",
+        "type": "number",
+        "max_length": 5,
+        "group": "inventory",
+        "example": "2"
+      },
+      "store_name": {
+        "description": "Your store's name",
+        "type": "string",
+        "max_length": 22,
+        "group": "store",
+        "example": "MY TEST STORE"
+      },
+      "currency": {
+        "description": "Store currency code",
+        "type": "string",
+        "max_length": 3,
+        "group": "store",
+        "example": "USD"
+      }
+    }
+  },
+  "teaser": "{66} TODAY $1,284",
+  "previews": [
+    {
+      "device_type": "flagship",
+      "rows": [
+        "    MY TEST STORE",
+        "",
+        "  {66} TODAY $1,284",
+        " 23 ORDERS AVG $56",
+        " #1042 $86 12M AGO",
+        "     4 LOW STOCK"
+      ]
+    },
+    {
+      "device_type": "note",
+      "rows": [
+        "{66} TODAY $1,284",
+        "   23 ORDERS",
+        " #1042 12M AGO"
+      ]
+    },
+    {
+      "label": "New order alert",
+      "device_type": "flagship",
+      "rows": [
+        "",
+        "   {66} NEW ORDER {66}",
+        "",
+        "        #1042",
+        "         $86",
+        "    TODAY $1,284"
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "docs/board-display.png",
+      "alt": "Shopify store sales, orders and latest order on a FiestaBoard",
+      "caption": "Today's sales, order count, latest order and low-stock count",
+      "primary": true
+    }
+  ],
+  "demo": {
+    "flagship": {
+      "name": "Shopify Demo",
+      "template": [
+        "{{shopify.store_name}}",
+        "",
+        "{66} {{shopify.sales_line}}",
+        "{{shopify.orders_line}} AVG {{shopify.avg_order_display}}",
+        "{{shopify.last_order_line}}",
+        "{{shopify.low_stock_line}}"
+      ],
+      "line_metadata": [
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        }
+      ]
+    },
+    "note": {
+      "name": "Shopify (Note)",
+      "template": [
+        "{66} {{shopify.sales_line}}",
+        "{{shopify.orders_line}}",
+        "{{shopify.last_order_number}} {{shopify.last_order_ago}}"
+      ],
+      "line_metadata": [
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        },
+        {
+          "alignment": "center",
+          "wrap": false
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: Fiestaboard/FiestaBoard
+          path: fiestaboard-core
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r fiestaboard-core/requirements.txt
+          pip install pytest pytest-cov
+          # Add any extra runtime deps your plugin imports here, e.g.:
+          # pip install icalendar recurring-ical-events
+
+      - name: Validate manifest
+        run: |
+          python -c "
+          import json
+          with open('manifest.json') as f:
+              m = json.load(f)
+          for field in ['id', 'name', 'version']:
+              assert field in m, f'Missing required field: {field}'
+          print('manifest.json is valid')
+          "
+
+      - name: Set up plugin directory structure
+        run: |
+          PLUGIN_ID=$(python -c "import json; print(json.load(open('manifest.json'))['id'])")
+          mkdir -p plugins
+          touch plugins/__init__.py
+          ln -s .. "plugins/$PLUGIN_ID"
+          ln -s . "$PLUGIN_ID"
+
+      - name: Run tests
+        env:
+          PYTHONPATH: "${{ github.workspace }}:fiestaboard-core"
+          BOARD_READ_WRITE_KEY: test_key
+        run: |
+          cat > .coveragerc << 'RCEOF'
+          [run]
+          omit = fiestaboard-core/*
+          RCEOF
+          pytest tests/ -v \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            --ignore=fiestaboard-core
